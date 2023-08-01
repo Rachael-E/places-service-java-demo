@@ -1,0 +1,40 @@
+# ArcGIS Java SDK
+data.zip*
+bin/
+build/
+out/
+
+# Local configuration file (sdk path, etc)
+local.properties
+.gradle/
+samples-data/
+
+# Intellij project files
+*.ipr
+.idea/
+*.iml
+
+# Eclipse
+.metadata
+.project
+.classpath
+.settings/
+.loadpath
+.recommenders
+.factorypath
+
+# SublimeText
+/*.sublime-project
+*.sublime-workspace
+
+# OS generated files #
+######################
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+/arcgis-runtime-samples-java.iws
+/arcgis-runtime-samples-java.iml
+/feature_layers/create-mobile-geodatabase/LocationHistory.geodatabase
