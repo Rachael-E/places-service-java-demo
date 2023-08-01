@@ -16,6 +16,9 @@
 
 package com.esri.demo.places_service_demo;
 
+import com.esri.arcgisruntime.ArcGISRuntimeEnvironment;
+import com.esri.arcgisruntime.mapping.ArcGISMap;
+import com.esri.arcgisruntime.mapping.view.MapView;
 import com.esri.arcgisruntime.arcgisservices.LabelDefinition;
 import com.esri.arcgisruntime.concurrent.ListenableFuture;
 import com.esri.arcgisruntime.geometry.Point;
@@ -29,18 +32,16 @@ import com.esri.arcgisruntime.symbology.SimpleRenderer;
 import com.esri.arcgisruntime.symbology.Symbol;
 import com.esri.arcgisruntime.symbology.SymbolStyle;
 import com.esri.arcgisruntime.symbology.TextSymbol;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
-
-import com.esri.arcgisruntime.ArcGISRuntimeEnvironment;
-import com.esri.arcgisruntime.mapping.ArcGISMap;
-import com.esri.arcgisruntime.mapping.view.MapView;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -54,7 +55,6 @@ public class PlacesServiceDemo extends Application {
   private MapView mapView;
   private Symbol symbol;
   HttpClient httpClient = HttpClient.newHttpClient();
-
 
   @Override
   public void start(Stage stage) {
@@ -78,7 +78,7 @@ public class PlacesServiceDemo extends Application {
       // create a map view and set the map to it
       mapView = new MapView();
 
-      // set up label expression to display information on the map
+      // set up label expression to display the "Name" attribute on the map
       var simpleLabelExpression = new SimpleLabelExpression("[Name]");
       var textSymbol = new TextSymbol(10, "SearchResult", Color.DARKGREEN, TextSymbol.HorizontalAlignment.LEFT, TextSymbol.VerticalAlignment.TOP);
       var labelDefinition = new LabelDefinition(simpleLabelExpression, textSymbol);
@@ -88,7 +88,6 @@ public class PlacesServiceDemo extends Application {
       graphicsOverlay.getLabelDefinitions().add(labelDefinition);
       graphicsOverlay.setLabelsEnabled(true);
       mapView.getGraphicsOverlays().add(graphicsOverlay);
-
 
       // set up URI for Places Service
       String domainName = "https://places-api.arcgis.com/";
@@ -151,12 +150,12 @@ public class PlacesServiceDemo extends Application {
           graphicsOverlay.getGraphics().add(resultGraphic);
         }
 
+        // set the viewpoint of the map view to central location
         mapView.setViewpoint(new Viewpoint(new Point(-3.19551, 55.94417, SpatialReferences.getWgs84()), 30000)); // central location
 
       } else {
         System.out.println("No place results returned");
       }
-
 
       // add the map view to the stack pane
       stackPane.getChildren().addAll(mapView);
@@ -187,6 +186,9 @@ public class PlacesServiceDemo extends Application {
     Application.launch(args);
   }
 
+  /**
+   * The following classes are for storing results from the Places Service.
+   */
   public static class PlaceResult {
 
     public List<Place> results;
@@ -203,7 +205,6 @@ public class PlacesServiceDemo extends Application {
     public PlaceLocation location;
     public List<Category> categories;
     public String name;
-
   }
 
   public static class PlaceLocation {
@@ -216,4 +217,3 @@ public class PlacesServiceDemo extends Application {
     public String label;
   }
 }
-
