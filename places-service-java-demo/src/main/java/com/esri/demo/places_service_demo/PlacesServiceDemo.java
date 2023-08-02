@@ -127,24 +127,25 @@ public class PlacesServiceDemo extends Application {
             SimpleRenderer simpleRenderer = new SimpleRenderer(symbol);
             graphicsOverlay.setRenderer(simpleRenderer);
           } else {
-            System.out.println("Symbol not found");
+            new Alert(Alert.AlertType.ERROR, "Symbol not foud").show();
           }
         } catch (Exception e) {
           e.printStackTrace();
         }
       });
 
-      // store Places service http response results in PlaceResult class
+      // deserialize JSON to Java object, store Places service http response results in PlaceResult class
       Gson gson = new GsonBuilder().create();
       PlaceResult placeResult = gson.fromJson(placesServiceHttpResponse.body(), PlaceResult.class);
 
       if (!placeResult.results.isEmpty()) {
         for (Place result : placeResult.results) {
+          // get the place results co-ordinates
           double x = result.location.x;
           double y = result.location.y;
 
+          // create a new point with the co-ordinates and display them as a graphic on the graphics overlay
           Point resultPoint = new Point(x, y, SpatialReferences.getWgs84());
-
           Graphic resultGraphic = new Graphic(resultPoint);
           resultGraphic.getAttributes().put("Name", result.name);
           graphicsOverlay.getGraphics().add(resultGraphic);
@@ -154,7 +155,7 @@ public class PlacesServiceDemo extends Application {
         mapView.setViewpoint(new Viewpoint(new Point(-3.19551, 55.94417, SpatialReferences.getWgs84()), 30000)); // central location
 
       } else {
-        System.out.println("No place results returned");
+        new Alert(Alert.AlertType.ERROR, "No place results returned").show();
       }
 
       // add the map view to the stack pane
