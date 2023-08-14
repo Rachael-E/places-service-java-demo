@@ -49,6 +49,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 public class PlacesServiceDemo extends Application {
 
@@ -90,21 +91,39 @@ public class PlacesServiceDemo extends Application {
       mapView.getGraphicsOverlays().add(graphicsOverlay);
 
       // set up URI for Places Service
-      String domainName = "https://places-api.arcgis.com/";
-      String path = "arcgis/rest/services/places-service/v1/";
-      String requestType = "places/near-point?";
-      URI placesServiceUri = new URI(domainName + path + requestType + "searchText=garden&x=-3.19551&y=55.94417&radius=1000&f=pjson&token=" + yourAPIKey);
+      String scheme = "https";
+      String authority = "places-api.arcgis.com";
+      String path = "/arcgis/rest/services/places-service/v1/places/near-point";
+      String query =
+        "searchText=garden" +
+          "&x=-3.19551" +
+          "&y=55.94417" +
+          "&radius=1000" +
+          "&f=pjson" +
+          "&token=" + yourAPIKey;
+//      URI placesServiceUri = new URI(domainName + path + requestType + "searchText=garden&x=-3.19551&y=55.94417&radius=1000&f=pjson&token=" + yourAPIKey);
+      URI placesServiceUri = new URI(scheme, authority, path, query, null);
       // build the http request for the places service and store the response
-      HttpRequest placesServiceHttpRequest = HttpRequest.newBuilder().uri(placesServiceUri).GET().build();
-      HttpResponse<String> placesServiceHttpResponse = httpClient.send(placesServiceHttpRequest, HttpResponse.BodyHandlers.ofString());
+      HttpRequest placesServiceHttpRequest = HttpRequest.newBuilder(placesServiceUri).uri(placesServiceUri).GET().build();
+      CompletableFuture <HttpResponse<String>> placesServiceCompleteableFuture = httpClient.sendAsync(placesServiceHttpRequest, HttpResponse.BodyHandlers.ofString());
 
       // set up the URI for Basemap Styles Services - outdoor style
-      URI basemapUri = new URI("https://basemapstyles-api.arcgis.com/arcgis/rest/services/styles/v2/webmaps/arcgis/outdoor");
-      // build the http request for the Basemap Styles service and store the response
-      HttpRequest basemapRequest = HttpRequest.newBuilder().uri(basemapUri).setHeader("Authorization", "Bearer " + yourAPIKey).GET().build();
-      HttpResponse<String> basemapResponse = httpClient.send(basemapRequest, HttpResponse.BodyHandlers.ofString());
-      // set the map to the JSON response from the basemap styles service
-      mapView.setMap(ArcGISMap.fromJson(basemapResponse.body()));
+      URI basemapUri = new URI("https",
+        "basemapstyles-api.arcgis.com",
+        "/arcgis/rest/services/styles/v2/webmaps/arcgis/outdoor", null, null);
+      // build the http request asynchronously for the Basemap Styles service and store the response
+      HttpRequest basemapRequest = HttpRequest.newBuilder(basemapUri)
+        .setHeader("Authorization", "Bearer " + yourAPIKey).GET().build();
+      CompletableFuture<HttpResponse<String>> basemapCompletableFuture = httpClient.sendAsync(basemapRequest,
+        HttpResponse.BodyHandlers.ofString());
+
+      // get the JSON response and create an ArcGISMap with it
+      try {
+        var basemapResponseBody = basemapCompletableFuture.thenApply(HttpResponse::body).get();
+        mapView.setMap(ArcGISMap.fromJson(basemapResponseBody));
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
 
       // create a new symbol style from the Esri2DPointSymbolsStyle library (https://developers.arcgis.com/javascript/latest/visualization/symbols-color-ramps/esri-web-style-symbols-2d/)
       var symbolStyle = new SymbolStyle("Esri2DPointSymbolsStyle", null);
@@ -124,7 +143,7 @@ public class PlacesServiceDemo extends Application {
           // get the symbol and set it in a simple renderer
           symbol = searchResult.get();
           if (symbol != null) {
-            SimpleRenderer simpleRenderer = new SimpleRenderer(symbol);
+            var simpleRenderer = new SimpleRenderer(symbol);
             graphicsOverlay.setRenderer(simpleRenderer);
           } else {
             new Alert(Alert.AlertType.ERROR, "Symbol not foud").show();
@@ -136,26 +155,33 @@ public class PlacesServiceDemo extends Application {
 
       // deserialize JSON to Java object, store Places service http response results in PlaceResult class
       Gson gson = new GsonBuilder().create();
-      PlaceResult placeResult = gson.fromJson(placesServiceHttpResponse.body(), PlaceResult.class);
+      // get the JSON response and create place results with it
+      try {
+        var placesServiceHttpResponse = placesServiceCompleteableFuture.thenApply(HttpResponse::body).get();
+        PlaceResult placeResult = gson.fromJson(placesServiceHttpResponse, PlaceResult.class);
 
-      if (!placeResult.results.isEmpty()) {
-        for (Place result : placeResult.results) {
-          // get the place results co-ordinates
-          double x = result.location.x;
-          double y = result.location.y;
+        if (!placeResult.results.isEmpty()) {
+          for (Place result : placeResult.results) {
+            // get the place results co-ordinates
+            double x = result.location.x;
+            double y = result.location.y;
 
-          // create a new point with the co-ordinates and display them as a graphic on the graphics overlay
-          Point resultPoint = new Point(x, y, SpatialReferences.getWgs84());
-          Graphic resultGraphic = new Graphic(resultPoint);
-          resultGraphic.getAttributes().put("Name", result.name);
-          graphicsOverlay.getGraphics().add(resultGraphic);
+            // create a new point with the co-ordinates and display them as a graphic on the graphics overlay
+            var point = new Point(x, y, SpatialReferences.getWgs84());
+            var graphic = new Graphic(point);
+            graphic.getAttributes().put("Name", result.name);
+            graphicsOverlay.getGraphics().add(graphic);
+
+        }
+          // set the viewpoint of the map view to central location
+          mapView.setViewpoint(new Viewpoint(new Point(-3.19551, 55.94417, SpatialReferences.getWgs84()), 20000)); // central location
+
+        } else {
+          new Alert(Alert.AlertType.ERROR, "No place results returned").show();
         }
 
-        // set the viewpoint of the map view to central location
-        mapView.setViewpoint(new Viewpoint(new Point(-3.19551, 55.94417, SpatialReferences.getWgs84()), 30000)); // central location
-
-      } else {
-        new Alert(Alert.AlertType.ERROR, "No place results returned").show();
+      } catch (Exception e) {
+        e.printStackTrace();
       }
 
       // add the map view to the stack pane
