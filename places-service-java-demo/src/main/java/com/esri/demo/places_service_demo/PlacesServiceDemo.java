@@ -101,11 +101,10 @@ public class PlacesServiceDemo extends Application {
           "&radius=1000" +
           "&f=pjson" +
           "&token=" + yourAPIKey;
-//      URI placesServiceUri = new URI(domainName + path + requestType + "searchText=garden&x=-3.19551&y=55.94417&radius=1000&f=pjson&token=" + yourAPIKey);
       URI placesServiceUri = new URI(scheme, authority, path, query, null);
       // build the http request for the places service and store the response
       HttpRequest placesServiceHttpRequest = HttpRequest.newBuilder(placesServiceUri).uri(placesServiceUri).GET().build();
-      CompletableFuture <HttpResponse<String>> placesServiceCompleteableFuture = httpClient.sendAsync(placesServiceHttpRequest, HttpResponse.BodyHandlers.ofString());
+      CompletableFuture <HttpResponse<String>> placesServiceCompletableFuture = httpClient.sendAsync(placesServiceHttpRequest, HttpResponse.BodyHandlers.ofString());
 
       // set up the URI for Basemap Styles Services - outdoor style
       URI basemapUri = new URI("https",
@@ -119,8 +118,10 @@ public class PlacesServiceDemo extends Application {
 
       // get the JSON response and create an ArcGISMap with it
       try {
-        var basemapResponseBody = basemapCompletableFuture.thenApply(HttpResponse::body).get();
-        mapView.setMap(ArcGISMap.fromJson(basemapResponseBody));
+        basemapCompletableFuture
+          .thenApply(HttpResponse::body)
+          .thenApply(ArcGISMap::fromJson)
+          .thenAccept(mapView::setMap);
       } catch (Exception e) {
         e.printStackTrace();
       }
@@ -157,29 +158,23 @@ public class PlacesServiceDemo extends Application {
       Gson gson = new GsonBuilder().create();
       // get the JSON response and create place results with it
       try {
-        var placesServiceHttpResponse = placesServiceCompleteableFuture.thenApply(HttpResponse::body).get();
-        PlaceResult placeResult = gson.fromJson(placesServiceHttpResponse, PlaceResult.class);
-
-        if (!placeResult.results.isEmpty()) {
-          for (Place result : placeResult.results) {
-            // get the place results co-ordinates
-            double x = result.location.x;
-            double y = result.location.y;
-
-            // create a new point with the co-ordinates and display them as a graphic on the graphics overlay
-            var point = new Point(x, y, SpatialReferences.getWgs84());
-            var graphic = new Graphic(point);
-            graphic.getAttributes().put("Name", result.name);
-            graphicsOverlay.getGraphics().add(graphic);
-
-        }
-          // set the viewpoint of the map view to central location
-          mapView.setViewpoint(new Viewpoint(new Point(-3.19551, 55.94417, SpatialReferences.getWgs84()), 20000)); // central location
-
-        } else {
-          new Alert(Alert.AlertType.ERROR, "No place results returned").show();
-        }
-
+        placesServiceCompletableFuture
+          .thenApply(HttpResponse::body)
+          .thenApply(body -> gson.fromJson(body, PlaceResult.class))
+          .thenAccept(placeResult -> {
+            if (!placeResult.results.isEmpty()) {
+              placeResult.results.stream()
+                .map(result -> {
+                  var graphic = new Graphic(new Point(result.location.x, result.location.y, SpatialReferences.getWgs84()));
+                  graphic.getAttributes().put("Name", result.name);
+                  return graphic;
+                })
+                .forEach(graphicsOverlay.getGraphics()::add);
+              mapView.setViewpoint(new Viewpoint(new Point(-3.19551, 55.94417, SpatialReferences.getWgs84()), 20000));
+            } else {
+              new Alert(Alert.AlertType.ERROR, "No place results returned").show();
+            }
+          });
       } catch (Exception e) {
         e.printStackTrace();
       }
