@@ -35,6 +35,7 @@ import com.esri.arcgisruntime.symbology.TextSymbol;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonParser;
 
 import javafx.application.Application;
 import javafx.scene.Scene;
@@ -81,7 +82,7 @@ public class PlacesServiceDemo extends Application {
 
       // set up label expression to display the "Name" attribute on the map
       var simpleLabelExpression = new SimpleLabelExpression("[Name]");
-      var textSymbol = new TextSymbol(10, "SearchResult", Color.DARKGREEN, TextSymbol.HorizontalAlignment.LEFT, TextSymbol.VerticalAlignment.TOP);
+      var textSymbol = new TextSymbol(12, "SearchResult", Color.DARKGREEN, TextSymbol.HorizontalAlignment.LEFT, TextSymbol.VerticalAlignment.TOP);
       var labelDefinition = new LabelDefinition(simpleLabelExpression, textSymbol);
 
       // set up the graphics overlay to display returned places on the map
@@ -104,26 +105,26 @@ public class PlacesServiceDemo extends Application {
       URI placesServiceUri = new URI(scheme, authority, path, query, null);
       // build the http request for the places service and store the response
       HttpRequest placesServiceHttpRequest = HttpRequest.newBuilder(placesServiceUri).uri(placesServiceUri).GET().build();
-      CompletableFuture <HttpResponse<String>> placesServiceCompletableFuture = httpClient.sendAsync(placesServiceHttpRequest, HttpResponse.BodyHandlers.ofString());
+      CompletableFuture<HttpResponse<String>> placesServiceCompletableFuture = httpClient.sendAsync(placesServiceHttpRequest, HttpResponse.BodyHandlers.ofString());
 
       // set up the URI for Basemap Styles Services - outdoor style
       URI basemapUri = new URI("https",
         "basemapstyles-api.arcgis.com",
         "/arcgis/rest/services/styles/v2/webmaps/arcgis/outdoor", null, null);
+
       // build the http request asynchronously for the Basemap Styles service and store the response
       HttpRequest basemapRequest = HttpRequest.newBuilder(basemapUri)
         .setHeader("Authorization", "Bearer " + yourAPIKey).GET().build();
-      CompletableFuture<HttpResponse<String>> basemapCompletableFuture = httpClient.sendAsync(basemapRequest,
-        HttpResponse.BodyHandlers.ofString());
+      HttpResponse<String> basemapHttpResponse = httpClient.send(basemapRequest, HttpResponse.BodyHandlers.ofString());
+      var basemapResponseBody = basemapHttpResponse.body();
 
       // get the JSON response and create an ArcGISMap with it
-      try {
-        basemapCompletableFuture
-          .thenApply(HttpResponse::body)
-          .thenApply(ArcGISMap::fromJson)
-          .thenAccept(mapView::setMap);
-      } catch (Exception e) {
-        e.printStackTrace();
+      if (basemapHttpResponse.statusCode() == 200) {
+        mapView.setMap(ArcGISMap.fromJson(basemapResponseBody)); // 200 if successful
+      } else {
+        var errorJsonObject = JsonParser.parseString(basemapResponseBody).getAsJsonObject().get("error").getAsJsonObject();
+        var details = errorJsonObject.get("details").getAsString().stripLeading().stripTrailing();
+        new Alert(Alert.AlertType.ERROR, "Basemap Response Error: " + errorJsonObject.get("code") + "\n" + details).show();
       }
 
       // create a new symbol style from the Esri2DPointSymbolsStyle library (https://developers.arcgis.com/javascript/latest/visualization/symbols-color-ramps/esri-web-style-symbols-2d/)
@@ -147,7 +148,7 @@ public class PlacesServiceDemo extends Application {
             var simpleRenderer = new SimpleRenderer(symbol);
             graphicsOverlay.setRenderer(simpleRenderer);
           } else {
-            new Alert(Alert.AlertType.ERROR, "Symbol not foud").show();
+            new Alert(Alert.AlertType.ERROR, "Symbol not found").show();
           }
         } catch (Exception e) {
           e.printStackTrace();
@@ -170,7 +171,9 @@ public class PlacesServiceDemo extends Application {
                   return graphic;
                 })
                 .forEach(graphicsOverlay.getGraphics()::add);
-              mapView.setViewpoint(new Viewpoint(new Point(-3.19551, 55.94417, SpatialReferences.getWgs84()), 20000));
+              if (!graphicsOverlay.getGraphics().isEmpty()) {
+                mapView.setViewpointCenterAsync(new Point(-3.19551, 55.94417, SpatialReferences.getWgs84()), 20000);
+              }
             } else {
               new Alert(Alert.AlertType.ERROR, "No place results returned").show();
             }
