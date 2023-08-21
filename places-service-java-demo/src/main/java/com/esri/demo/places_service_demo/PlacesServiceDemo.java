@@ -24,7 +24,6 @@ import com.esri.arcgisruntime.concurrent.ListenableFuture;
 import com.esri.arcgisruntime.geometry.Point;
 import com.esri.arcgisruntime.geometry.SpatialReferences;
 import com.esri.arcgisruntime.loadable.LoadStatus;
-import com.esri.arcgisruntime.mapping.Viewpoint;
 import com.esri.arcgisruntime.mapping.labeling.SimpleLabelExpression;
 import com.esri.arcgisruntime.mapping.view.Graphic;
 import com.esri.arcgisruntime.mapping.view.GraphicsOverlay;
@@ -38,6 +37,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParser;
 
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.layout.StackPane;
@@ -57,6 +57,7 @@ public class PlacesServiceDemo extends Application {
   private MapView mapView;
   private Symbol symbol;
   HttpClient httpClient = HttpClient.newHttpClient();
+  String yourAPIKey = System.getProperty("apiKey");
 
   @Override
   public void start(Stage stage) {
@@ -74,7 +75,6 @@ public class PlacesServiceDemo extends Application {
       stage.show();
 
       // authentication with an API key or named user is required to access basemaps and other location services
-      String yourAPIKey = System.getProperty("apiKey");
       ArcGISRuntimeEnvironment.setApiKey(yourAPIKey);
 
       // create a map view and set the map to it
@@ -91,41 +91,7 @@ public class PlacesServiceDemo extends Application {
       graphicsOverlay.setLabelsEnabled(true);
       mapView.getGraphicsOverlays().add(graphicsOverlay);
 
-      // set up URI for Places Service
-      String scheme = "https";
-      String authority = "places-api.arcgis.com";
-      String path = "/arcgis/rest/services/places-service/v1/places/near-point";
-      String query =
-        "searchText=garden" +
-          "&x=-3.19551" +
-          "&y=55.94417" +
-          "&radius=1000" +
-          "&f=pjson" +
-          "&token=" + yourAPIKey;
-      URI placesServiceUri = new URI(scheme, authority, path, query, null);
-      // build the http request for the places service and store the response
-      HttpRequest placesServiceHttpRequest = HttpRequest.newBuilder(placesServiceUri).uri(placesServiceUri).GET().build();
-      CompletableFuture<HttpResponse<String>> placesServiceCompletableFuture = httpClient.sendAsync(placesServiceHttpRequest, HttpResponse.BodyHandlers.ofString());
-
-      // set up the URI for Basemap Styles Services - outdoor style
-      URI basemapUri = new URI("https",
-        "basemapstyles-api.arcgis.com",
-        "/arcgis/rest/services/styles/v2/webmaps/arcgis/outdoor", null, null);
-
-      // build the http request asynchronously for the Basemap Styles service and store the response
-      HttpRequest basemapRequest = HttpRequest.newBuilder(basemapUri)
-        .setHeader("Authorization", "Bearer " + yourAPIKey).GET().build();
-      HttpResponse<String> basemapHttpResponse = httpClient.send(basemapRequest, HttpResponse.BodyHandlers.ofString());
-      var basemapResponseBody = basemapHttpResponse.body();
-
-      // get the JSON response and create an ArcGISMap with it
-      if (basemapHttpResponse.statusCode() == 200) {
-        mapView.setMap(ArcGISMap.fromJson(basemapResponseBody)); // 200 if successful
-      } else {
-        var errorJsonObject = JsonParser.parseString(basemapResponseBody).getAsJsonObject().get("error").getAsJsonObject();
-        var details = errorJsonObject.get("details").getAsString().stripLeading().stripTrailing();
-        new Alert(Alert.AlertType.ERROR, "Basemap Response Error: " + errorJsonObject.get("code") + "\n" + details).show();
-      }
+      setBasemapServicesMapToMapView();
 
       // create a new symbol style from the Esri2DPointSymbolsStyle library (https://developers.arcgis.com/javascript/latest/visualization/symbols-color-ramps/esri-web-style-symbols-2d/)
       var symbolStyle = new SymbolStyle("Esri2DPointSymbolsStyle", null);
@@ -155,29 +121,54 @@ public class PlacesServiceDemo extends Application {
         }
       });
 
+      // set up URI for Places Service
+      String scheme = "https";
+      String authority = "places-api.arcgis.com";
+      String path = "/arcgis/rest/services/places-service/v1/places/near-point";
+      String query =
+        "searchText=garden" +
+          "&x=-3.19551" +
+          "&y=55.94417" +
+          "&radius=1000" +
+          "&f=pjson" +
+          "&token=" + yourAPIKey;
+      URI placesServiceUri = new URI(scheme, authority, path, query, null);
+      // build the http request for the places service and store the response
+      HttpRequest placesServiceHttpRequest = HttpRequest.newBuilder(placesServiceUri).uri(placesServiceUri).GET().build();
+      CompletableFuture<HttpResponse<String>> placesServiceCompletableFuture = httpClient.sendAsync(placesServiceHttpRequest, HttpResponse.BodyHandlers.ofString());
+
       // deserialize JSON to Java object, store Places service http response results in PlaceResult class
       Gson gson = new GsonBuilder().create();
       // get the JSON response and create place results with it
       try {
         placesServiceCompletableFuture
           .thenApply(HttpResponse::body)
-          .thenApply(body -> gson.fromJson(body, PlaceResult.class))
-          .thenAccept(placeResult -> {
-            if (!placeResult.results.isEmpty()) {
-              placeResult.results.stream()
-                .map(result -> {
-                  var graphic = new Graphic(new Point(result.location.x, result.location.y, SpatialReferences.getWgs84()));
-                  graphic.getAttributes().put("Name", result.name);
-                  return graphic;
-                })
-                .forEach(graphicsOverlay.getGraphics()::add);
-              if (!graphicsOverlay.getGraphics().isEmpty()) {
-                mapView.setViewpointCenterAsync(new Point(-3.19551, 55.94417, SpatialReferences.getWgs84()), 20000);
+          .thenAccept(body -> {
+            // if there is an error returned from the http response body throw an exception with info
+            if (body.contains("error")) {
+              Platform.runLater(() -> new Alert(Alert.AlertType.ERROR, getServerResponseStatusAndDetails(body)).show());
+              var exception = new RuntimeException(getServerResponseStatusAndDetails(body));
+              exception.printStackTrace();
+              throw exception;
+            } else { // store results in PlaceResult and display on the map as graphics
+              var placeResult = gson.fromJson(body, PlaceResult.class);
+              if (!placeResult.results.isEmpty()) {
+                placeResult.results.stream()
+                  .map(result -> {
+                    var graphic = new Graphic(new Point(result.location.x, result.location.y, SpatialReferences.getWgs84()));
+                    graphic.getAttributes().put("Name", result.name);
+                    return graphic;
+                  })
+                  .forEach(graphicsOverlay.getGraphics()::add);
+                if (!graphicsOverlay.getGraphics().isEmpty()) {
+                  mapView.setViewpointCenterAsync(new Point(-3.19551, 55.94417, SpatialReferences.getWgs84()), 20000);
+                }
+              } else {
+                new Alert(Alert.AlertType.ERROR, "No place results returned").show();
               }
-            } else {
-              new Alert(Alert.AlertType.ERROR, "No place results returned").show();
             }
           });
+
       } catch (Exception e) {
         e.printStackTrace();
       }
@@ -209,6 +200,44 @@ public class PlacesServiceDemo extends Application {
   public static void main(String[] args) {
 
     Application.launch(args);
+  }
+
+  /**
+   * Gets a basemap from the Basemap Styles Services and sets it to the map view.
+   * @throws Exception
+   */
+  private void setBasemapServicesMapToMapView() throws Exception {
+
+    // set up the URI for Basemap Styles Services - outdoor style
+    URI basemapUri = new URI("https",
+      "basemapstyles-api.arcgis.com",
+      "/arcgis/rest/services/styles/v2/webmaps/arcgis/outdoor", null, null);
+
+    // build the http request asynchronously for the Basemap Styles service and store the response
+    HttpRequest basemapRequest = HttpRequest.newBuilder(basemapUri)
+      .setHeader("Authorization", "Bearer " + yourAPIKey).GET().build();
+    HttpResponse<String> basemapHttpResponse = httpClient.send(basemapRequest, HttpResponse.BodyHandlers.ofString());
+    var basemapResponseBody = basemapHttpResponse.body();
+
+    // get the JSON response and create an ArcGISMap with it
+    if (basemapHttpResponse.statusCode() == 200) {
+      mapView.setMap(ArcGISMap.fromJson(basemapResponseBody)); // 200 if successful
+    } else {
+      new Alert(Alert.AlertType.ERROR, getServerResponseStatusAndDetails(basemapResponseBody)).show();
+    }
+  }
+
+  /**
+   * Gets the server response error and code details
+   * @param responseBody the response body
+   * @return error details
+   */
+  private String getServerResponseStatusAndDetails(String responseBody) {
+    var errorJsonObject = JsonParser.parseString(responseBody).getAsJsonObject().get("error").getAsJsonObject();
+    var statusCode = errorJsonObject.get("code");
+    var details = errorJsonObject.get("details").getAsString().stripLeading().stripTrailing();
+
+    return "Server Response: " + statusCode + "\n" + details;
   }
 
   /**
