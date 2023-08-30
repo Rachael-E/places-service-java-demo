@@ -140,7 +140,6 @@ public class PlacesServiceDemo extends Application {
       // deserialize JSON to Java object, store Places service http response results in PlaceResult class
       Gson gson = new GsonBuilder().create();
       // get the JSON response and create place results with it
-      try {
         placesServiceCompletableFuture
           .thenApply(HttpResponse::body)
           .thenAccept(body -> {
@@ -168,11 +167,7 @@ public class PlacesServiceDemo extends Application {
               }
             }
           });
-
-      } catch (Exception e) {
-        e.printStackTrace();
-      }
-
+        
       // add the map view to the stack pane
       stackPane.getChildren().addAll(mapView);
     } catch (Exception e) {
